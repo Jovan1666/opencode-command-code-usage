@@ -1,0 +1,49 @@
+name: Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: ${{ matrix.os }} · node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # 三个平台都跑：脚本的很多决定是平台相关的（行尾、路径分隔符、CJK 宽度、
+        # 去哪儿找 node），只在 Linux 上绿过不等于能用。
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: ['18', '22']
+
+    steps:
+      # 固定到提交，不用可变的 major 标签：标签能被改指，提交不能。
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      # 全部检查都在这个脚本里：渲染断言、隐藏逻辑、阈值与钩子、输出格式、静态检查、
+      # 密钥扫描，以及本平台自己的坑（PATH 里找 node、安装器幂等）。本地跑同一条命令，
+      # 不会出现"本地过 CI 挂"。
+      - name: 仓库检查
+        run: node scripts/check.mjs
+
+      # 六种输出模式各跑一遍，都要求退出 0。--demo 不联网、不需要凭证，
+      # 所以这里纯粹是"脚本至少还能起来并渲染"的兜底。
+      - name: 离线冒烟
+        shell: bash
+        run: |
+          set -e
+          node src/cc-usage.mjs --help
+          node src/cc-usage.mjs --demo
+          node src/cc-usage.mjs --demo hot
+          node src/cc-usage.mjs --demo --md
+          node src/cc-usage.mjs --demo --compact
+          node src/cc-usage.mjs --demo --json
